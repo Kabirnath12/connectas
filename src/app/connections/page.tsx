@@ -7,7 +7,6 @@ import { apiRequest } from "@/lib/api";
 type Profile = {
   username?: string | null;
   avatarUrl?: string | null;
-  bio?: string | null;
 };
 
 type User = {
@@ -19,25 +18,25 @@ type User = {
 
 type FriendRequest = {
   id: string;
-  sender?: User;
-  receiver?: User;
+  sender?: User | null;
+  receiver?: User | null;
   createdAt?: string;
 };
 
-type Friend = {
-  id: string;
-  name: string;
-  profile?: Profile | null;
-};
+type Friend = User;
 
-type SocialUser = {
-  id: string;
-  name: string;
-  profile?: Profile | null;
-};
+type SocialUser = User;
+
+type Tab =
+  | "overview"
+  | "requests"
+  | "sent"
+  | "friends"
+  | "followers"
+  | "following";
 
 function initials(name?: string) {
-  return (name || "U")
+  return (name || "User")
     .split(" ")
     .map((part) => part[0])
     .join("")
@@ -45,25 +44,25 @@ function initials(name?: string) {
     .toUpperCase();
 }
 
-function Avatar({ user }: { user?: User | Friend | SocialUser }) {
-  const name = user?.name || "User";
-  const avatarUrl = user?.profile?.avatarUrl;
+function Avatar({ user }: { user: User }) {
+  const [failed, setFailed] = useState(false);
+  const avatarUrl = user.profile?.avatarUrl;
+
+  if (!avatarUrl || failed) {
+    return (
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 font-bold text-white">
+        {initials(user.name)}
+      </div>
+    );
+  }
 
   return (
-    <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 font-bold text-white">
-      {avatarUrl ? (
-        <img
-          src={avatarUrl}
-          alt={name}
-          className="h-full w-full object-cover"
-          onError={(event) => {
-            event.currentTarget.style.display = "none";
-          }}
-        />
-      ) : (
-        initials(name)
-      )}
-    </div>
+    <img
+      src={avatarUrl}
+      alt={user.name}
+      onError={() => setFailed(true)}
+      className="h-11 w-11 shrink-0 rounded-full object-cover"
+    />
   );
 }
 
@@ -71,25 +70,23 @@ function UserRow({
   user,
   action,
 }: {
-  user: User | Friend | SocialUser;
+  user: User;
   action?: React.ReactNode;
 }) {
-  const username = user.profile?.username;
-
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-slate-800 py-4 last:border-b-0">
+    <div className="flex items-center justify-between gap-4 border-b border-slate-800 py-4 last:border-b-0">
       <div className="flex min-w-0 items-center gap-3">
         <Avatar user={user} />
 
         <div className="min-w-0">
           <p className="truncate font-semibold text-white">{user.name}</p>
 
-          {username ? (
+          {user.profile?.username ? (
             <Link
-              href={`/u/${username}`}
+              href={`/u/${user.profile.username}`}
               className="text-sm text-cyan-400 hover:underline"
             >
-              @{username}
+              @{user.profile.username}
             </Link>
           ) : (
             <p className="text-sm text-slate-500">ConnectAS member</p>
@@ -103,18 +100,15 @@ function UserRow({
 }
 
 export default function ConnectionsPage() {
-  const [tab, setTab] = useState<
-    "overview" | "requests" | "sent" | "friends" | "followers" | "following"
-  >("overview");
-
+  const [tab, setTab] = useState<Tab>("overview");
   const [incoming, setIncoming] = useState<FriendRequest[]>([]);
   const [sent, setSent] = useState<FriendRequest[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [followers, setFollowers] = useState<SocialUser[]>([]);
   const [following, setFollowing] = useState<SocialUser[]>([]);
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
-  const [search, setSearch] = useState("");
 
   async function loadConnections() {
     try {
@@ -149,11 +143,15 @@ export default function ConnectionsPage() {
       );
 
       setFriends(friendsResponse.friends || friendsResponse.data || []);
-      setFollowers(followersResponse.followers || followersResponse.data || []);
-      setFollowing(followingResponse.following || followingResponse.data || []);
+      setFollowers(
+        followersResponse.followers || followersResponse.data || []
+      );
+      setFollowing(
+        followingResponse.following || followingResponse.data || []
+      );
     } catch (error) {
       console.error("Connections loading error:", error);
-      setMessage("Unable to load connections. Please log in again.");
+      setMessage("Unable to load connections.");
     } finally {
       setLoading(false);
     }
@@ -172,7 +170,7 @@ export default function ConnectionsPage() {
       setMessage("Friend request accepted.");
       await loadConnections();
     } catch {
-      setMessage("Could not accept this request.");
+      setMessage("Could not accept request.");
     }
   }
 
@@ -185,7 +183,7 @@ export default function ConnectionsPage() {
       setMessage("Friend request rejected.");
       await loadConnections();
     } catch {
-      setMessage("Could not reject this request.");
+      setMessage("Could not reject request.");
     }
   }
 
@@ -195,10 +193,10 @@ export default function ConnectionsPage() {
         method: "POST",
       });
 
-      setMessage("Friend request cancelled.");
+      setMessage("Request cancelled.");
       await loadConnections();
     } catch {
-      setMessage("Could not cancel this request.");
+      setMessage("Could not cancel request.");
     }
   }
 
@@ -224,7 +222,7 @@ export default function ConnectionsPage() {
       setMessage("Unfollowed successfully.");
       await loadConnections();
     } catch {
-      setMessage("Could not unfollow this user.");
+      setMessage("Could not unfollow user.");
     }
   }
 
@@ -264,14 +262,17 @@ export default function ConnectionsPage() {
     );
   }, [following, search]);
 
-  const tabs = [
-    ["overview", "Overview"],
-    ["requests", `Requests ${incoming.length ? `(${incoming.length})` : ""}`],
-    ["sent", "Sent"],
-    ["friends", `Friends (${friends.length})`],
-    ["followers", `Followers (${followers.length})`],
-    ["following", `Following (${following.length})`],
-  ] as const;
+  const tabs: { value: Tab; label: string }[] = [
+    { value: "overview", label: "Overview" },
+    {
+      value: "requests",
+      label: `Requests${incoming.length ? ` (${incoming.length})` : ""}`,
+    },
+    { value: "sent", label: "Sent" },
+    { value: "friends", label: `Friends (${friends.length})` },
+    { value: "followers", label: `Followers (${followers.length})` },
+    { value: "following", label: `Following (${following.length})` },
+  ];
 
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-8 text-white md:px-8">
@@ -281,7 +282,9 @@ export default function ConnectionsPage() {
             ConnectAS Network
           </p>
 
-          <h1 className="text-3xl font-bold md:text-4xl">Connections Center</h1>
+          <h1 className="text-3xl font-bold md:text-4xl">
+            Connections Center
+          </h1>
 
           <p className="mt-2 text-slate-400">
             Manage your friends, followers, following, and connection requests.
@@ -329,85 +332,52 @@ export default function ConnectionsPage() {
         </div>
 
         <div className="mb-6 flex gap-2 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900 p-2">
-          {tabs.map(([value, label]) => (
+          {tabs.map((item) => (
             <button
-              key={value}
+              key={item.value}
               onClick={() => {
-                setTab(value);
+                setTab(item.value);
                 setSearch("");
               }}
               className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium ${
-                tab === value
+                tab === item.value
                   ? "bg-cyan-500 text-slate-950"
                   : "text-slate-400 hover:bg-slate-800 hover:text-white"
               }`}
             >
-              {label}
+              {item.label}
             </button>
           ))}
         </div>
 
         {tab === "overview" && (
           <section className="grid gap-5 md:grid-cols-2">
-            <button
-              onClick={() => setTab("requests")}
-              className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-left hover:border-cyan-500/50"
-            >
-              <h2 className="text-xl font-bold">Incoming Requests</h2>
-              <p className="mt-2 text-slate-400">
-                Review people who want to connect with you.
-              </p>
-              <p className="mt-5 text-3xl font-bold text-cyan-400">
-                {incoming.length}
-              </p>
-            </button>
-
-            <button
-              onClick={() => setTab("sent")}
-              className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-left hover:border-cyan-500/50"
-            >
-              <h2 className="text-xl font-bold">Sent Requests</h2>
-              <p className="mt-2 text-slate-400">
-                Manage pending requests you have sent.
-              </p>
-              <p className="mt-5 text-3xl font-bold text-cyan-400">
-                {sent.length}
-              </p>
-            </button>
-
-            <button
-              onClick={() => setTab("friends")}
-              className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-left hover:border-cyan-500/50"
-            >
-              <h2 className="text-xl font-bold">Your Friends</h2>
-              <p className="mt-2 text-slate-400">
-                View and message your confirmed connections.
-              </p>
-              <p className="mt-5 text-3xl font-bold text-cyan-400">
-                {friends.length}
-              </p>
-            </button>
-
-            <button
-              onClick={() => setTab("followers")}
-              className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-left hover:border-cyan-500/50"
-            >
-              <h2 className="text-xl font-bold">Audience</h2>
-              <p className="mt-2 text-slate-400">
-                See who follows your ConnectAS profile.
-              </p>
-              <p className="mt-5 text-3xl font-bold text-cyan-400">
-                {followers.length}
-              </p>
-            </button>
+            {[
+              ["requests", "Incoming Requests", incoming.length],
+              ["sent", "Sent Requests", sent.length],
+              ["friends", "Your Friends", friends.length],
+              ["followers", "Followers", followers.length],
+            ].map(([value, title, count]) => (
+              <button
+                key={String(value)}
+                onClick={() => setTab(value as Tab)}
+                className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-left hover:border-cyan-500/50"
+              >
+                <h2 className="text-xl font-bold">{title}</h2>
+                <p className="mt-2 text-slate-400">
+                  Manage your ConnectAS network.
+                </p>
+                <p className="mt-5 text-3xl font-bold text-cyan-400">
+                  {count}
+                </p>
+              </button>
+            ))}
           </section>
         )}
 
         {tab !== "overview" && (
           <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-            {(tab === "friends" ||
-              tab === "followers" ||
-              tab === "following") && (
+            {["friends", "followers", "following"].includes(tab) && (
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
@@ -433,28 +403,31 @@ export default function ConnectionsPage() {
                         No pending requests.
                       </p>
                     ) : (
-                      incoming.map((request) => (
-                        <UserRow
-                          key={request.id}
-                          user={request.sender}
-                          action={
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => acceptRequest(request.id)}
-                                className="rounded-lg bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950"
-                              >
-                                Accept
-                              </button>
-                              <button
-                                onClick={() => rejectRequest(request.id)}
-                                className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300"
-                              >
-                                Reject
-                              </button>
-                            </div>
-                          }
-                        />
-                      ))
+                      incoming.map((request) =>
+                        request.sender ? (
+                          <UserRow
+                            key={request.id}
+                            user={request.sender}
+                            action={
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => acceptRequest(request.id)}
+                                  className="rounded-lg bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950"
+                                >
+                                  Accept
+                                </button>
+
+                                <button
+                                  onClick={() => rejectRequest(request.id)}
+                                  className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300"
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            }
+                          />
+                        ) : null
+                      )
                     )}
                   </div>
                 )}
@@ -468,20 +441,22 @@ export default function ConnectionsPage() {
                         No sent requests.
                       </p>
                     ) : (
-                      sent.map((request) => (
-                        <UserRow
-                          key={request.id}
-                          user={request.receiver}
-                          action={
-                            <button
-                              onClick={() => cancelRequest(request.id)}
-                              className="rounded-lg border border-red-500/40 px-3 py-2 text-sm text-red-300"
-                            >
-                              Cancel
-                            </button>
-                          }
-                        />
-                      ))
+                      sent.map((request) =>
+                        request.receiver ? (
+                          <UserRow
+                            key={request.id}
+                            user={request.receiver}
+                            action={
+                              <button
+                                onClick={() => cancelRequest(request.id)}
+                                className="rounded-lg border border-red-500/40 px-3 py-2 text-sm text-red-300"
+                              >
+                                Cancel
+                              </button>
+                            }
+                          />
+                        ) : null
+                      )
                     )}
                   </div>
                 )}
@@ -500,16 +475,14 @@ export default function ConnectionsPage() {
                           key={user.id}
                           user={user}
                           action={
-                            <Link
-                              href={
-                                user.profile?.username
-                                  ? `/u/${user.profile.username}`
-                                  : "#"
-                              }
-                              className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-cyan-300"
-                            >
-                              View
-                            </Link>
+                            user.profile?.username ? (
+                              <Link
+                                href={`/u/${user.profile.username}`}
+                                className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-cyan-300"
+                              >
+                                View
+                              </Link>
+                            ) : null
                           }
                         />
                       ))
