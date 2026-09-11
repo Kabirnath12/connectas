@@ -1,21 +1,10 @@
-const RAW_API_URL =
+const rawApiUrl =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
-// Remove trailing slashes and normalize the API base URL
-const API_URL = RAW_API_URL.replace(/\/+$/, "");
-
-function normalizeEndpoint(endpoint: string): string {
-  const cleanEndpoint = endpoint.startsWith("/")
-    ? endpoint
-    : `/${endpoint}`;
-
-  // If API_URL already ends with /api, prevent /api/api duplication
-  if (API_URL.endsWith("/api") && cleanEndpoint.startsWith("/api/")) {
-    return cleanEndpoint.substring(4);
-  }
-
-  return cleanEndpoint;
-}
+// Always ensure the API base URL ends with /api
+const API_URL = rawApiUrl.replace(/\/+$/, "").endsWith("/api")
+  ? rawApiUrl.replace(/\/+$/, "")
+  : `${rawApiUrl.replace(/\/+$/, "")}/api`;
 
 export async function apiRequest<T>(
   endpoint: string,
@@ -26,9 +15,13 @@ export async function apiRequest<T>(
       ? localStorage.getItem("collabx_token")
       : null;
 
+  const cleanEndpoint = endpoint.startsWith("/")
+    ? endpoint
+    : `/${endpoint}`;
+
   const headers = new Headers(options.headers);
 
-  if (!headers.has("Content-Type") && !(options.body instanceof FormData)) {
+  if (!headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -36,27 +29,23 @@ export async function apiRequest<T>(
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const normalizedEndpoint = normalizeEndpoint(endpoint);
-  const requestUrl = `${API_URL}${normalizedEndpoint}`;
-
-  const response = await fetch(requestUrl, {
+  const response = await fetch(`${API_URL}${cleanEndpoint}`, {
     ...options,
     headers,
   });
 
-  let data: any;
+  let data: any = null;
 
   try {
     data = await response.json();
   } catch {
-    data = {
-      success: false,
-      message: "Invalid server response",
-    };
+    data = null;
   }
 
   if (!response.ok) {
-    throw new Error(data.message || `Request failed with status ${response.status}`);
+    throw new Error(
+      data?.message || `Request failed with status ${response.status}`
+    );
   }
 
   return data as T;
